@@ -18,7 +18,7 @@ Please ensure both are installed on your system before proceeding.
 You can check your installation with:
 ```bash
 docker --version
-docker-compose --version
+docker compose version
 ```
 
 ![-----------------------------------------------------](./img/green-gradient.png)
@@ -53,7 +53,7 @@ cp dockerize/.env.template dockerize/.env
 - Edit .env file and set your environment variables
 - Enable debug mode by setting `DEBUG=True`.
 - Uncomment RABBITMQ_IMAGE if you want to use a different image version.
-  Default is `rabbitmq:3.7-alpine`. This is useful if you encounter any issues
+  Default is `rabbitmq:3.13-alpine`. This is useful if you encounter any issues
   with the default image (can be also use to change the image without editing the code).
   Please also see [this discussion](https://github.com/qgis/QGIS-Plugins-Website/issues/80).
 
