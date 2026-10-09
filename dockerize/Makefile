@@ -1,4 +1,5 @@
 PROJECT_ID := qgis-plugins
+DEV_COMPOSE := docker compose -p $(PROJECT_ID) -f docker-compose.yml -f docker-compose.dev.yml
 
 SHELL := /usr/bin/env bash
 
@@ -203,81 +204,88 @@ exec:
 #    D E V E L O P M E N T    C O M M A N D S
 # ----------------------------------------------------------------------------
 
+.PHONY: build-dev devweb-test devweb-assets devweb devweb-migrate devweb-makemigrations \
+        devweb-exec devweb-shell devweb-runserver dbseed devweb-runtests maindev-install-dep
+
 build-dev:
 	@echo
 	@echo "------------------------------------------------------------------"
 	@echo "Building in development mode only"
 	@echo "------------------------------------------------------------------"
-	@docker compose -p $(PROJECT_ID) build devweb
+	@$(DEV_COMPOSE) build devweb
 
 devweb-test: db
 	@echo
 	@echo "------------------------------------------------------------------"
 	@echo "Running in TESTING mode"
 	@echo "------------------------------------------------------------------"
-	@docker compose up --no-deps -d devweb
+	@$(DEV_COMPOSE) up --no-deps -d devweb
 
-devweb: db
+devweb-assets:
+	@$(DEV_COMPOSE) stop webpack
+	@$(DEV_COMPOSE) run --rm --no-deps webpack sh -c 'npm ci && npm run dev'
+
+devweb: db devweb-assets
 	@echo
 	@echo "------------------------------------------------------------------"
 	@echo "Running in DEVELOPMENT mode"
 	@echo "------------------------------------------------------------------"
-	@docker compose -p $(PROJECT_ID) up --no-deps -d devweb rabbitmq worker beat webpack maindev qgis-qt6
+	@$(DEV_COMPOSE) up --no-deps -d devweb rabbitmq worker beat webpack maindev qgis-qt6
 
 devweb-migrate:
 	@echo
 	@echo "------------------------------------------------------------------"
 	@echo "Migrate in development mode only"
 	@echo "------------------------------------------------------------------"
-	@docker compose -p $(PROJECT_ID) exec devweb python manage.py migrate
+	@$(DEV_COMPOSE) exec devweb python manage.py migrate
 
 devweb-makemigrations:
 	@echo
 	@echo "------------------------------------------------------------------"
 	@echo "Migrate in development mode only"
 	@echo "------------------------------------------------------------------"
-	@docker compose -p $(PROJECT_ID) exec devweb python manage.py makemigrations $(app)
+	@$(DEV_COMPOSE) exec devweb python manage.py makemigrations $(app)
 
 devweb-exec:
 	@echo
 	@echo "------------------------------------------------------------------"
 	@echo "Execute a specific docker command"
 	@echo "------------------------------------------------------------------"
-	@docker compose -p $(PROJECT_ID) exec devweb $(c)
+	@$(DEV_COMPOSE) exec devweb $(c)
 
 devweb-shell:
 	@echo
 	@echo "------------------------------------------------------------------"
 	@echo "Shelling into the devweb container(s)"
 	@echo "------------------------------------------------------------------"
-	@docker compose -p $(PROJECT_ID) exec devweb bash
+	@$(DEV_COMPOSE) exec devweb bash
 
 devweb-runserver: devweb
 	@echo
 	@echo "------------------------------------------------------------------"
 	@echo "Running in DEVELOPMENT mode"
 	@echo "------------------------------------------------------------------"
-	@docker compose -p $(PROJECT_ID) exec devweb python manage.py runserver 0.0.0.0:8081
+	@$(DEV_COMPOSE) exec devweb python manage.py runserver 0.0.0.0:8081
 
 dbseed:
 	@echo
 	@echo "------------------------------------------------------------------"
 	@echo "Seed db with JSON data from /fixtures/*.json"
 	@echo "------------------------------------------------------------------"
-	@docker compose -p $(PROJECT_ID) exec devweb bash -c 'python manage.py loaddata fixtures/*.json'
+	@$(DEV_COMPOSE) exec devweb bash -c 'python manage.py loaddata fixtures/*.json'
 
 devweb-runtests:
 	@echo
 	@echo "------------------------------------------------------------------"
 	@echo "Running unit tests in development mode"
 	@echo "------------------------------------------------------------------"
-	@docker compose -p $(PROJECT_ID) exec devweb bash -c 'python manage.py makemigrations'
-	@docker compose -p $(PROJECT_ID) exec devweb bash -c 'python manage.py test'
+	@$(DEV_COMPOSE) exec devweb bash -c 'python manage.py makemigrations'
+	@$(DEV_COMPOSE) exec devweb bash -c 'python manage.py test'
 
 maindev-install-dep:
 	@echo
 	@echo "------------------------------------------------------------------"
 	@echo "Installing dependencies in maindev container"
 	@echo "------------------------------------------------------------------"
-	@docker compose -p $(PROJECT_ID) exec maindev bash -c "cd /srv/app && pip install -r REQUIREMENTS-dev.txt"
-	@docker compose -p $(PROJECT_ID) exec maindev bash -c  "cd /srv/app && pre-commit install"
+	@$(DEV_COMPOSE) exec maindev bash -c "cd /srv/app && pip install -r REQUIREMENTS-dev.txt"
+	@$(DEV_COMPOSE) exec maindev bash -c  "cd /srv/app && pre-commit install"

@@ -1,0 +1,28 @@
+# Explicitly loaded by the development Make targets; production uses the base file.
+x-dev-image: &dev-image
+  image: qgis-plugins-dev:local
+  build:
+    context: ${PWD}/../
+    dockerfile: dockerize/docker/Dockerfile
+    target: dev
+
+volumes:
+  webpack-node-modules:
+
+services:
+  devweb:
+    <<: *dev-image
+    # Keep the manifest generated in the source mount; start SSH for IDE access.
+    command: ["/usr/sbin/sshd", "-D"]
+
+  webpack:
+    <<: *dev-image
+    ports:
+      - "127.0.0.1:35729:35729"
+    environment:
+      WATCHPACK_POLLING: ${WATCHPACK_POLLING:-false}
+    volumes:
+      - webpack-node-modules:/home/web/django_project/node_modules
+
+  maindev:
+    <<: *dev-image

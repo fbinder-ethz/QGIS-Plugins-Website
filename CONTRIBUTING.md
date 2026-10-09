@@ -80,7 +80,7 @@ cd dockerize
 
 - Build and spin container
 ```bash
-make build
+make build-dev
 make devweb
 ```
 
@@ -100,7 +100,30 @@ make dbrestore
 ```bash
 make devweb-runserver
 ```
-and now, you can see your site at `http://localhost:62202` `http://0.0.0.0:62202`.
+Open `http://localhost:62202` or `http://0.0.0.0:62202` in your browser.
+
+`make devweb` installs the locked npm dependencies in a Docker volume and builds
+the CSS/JavaScript before starting the webpack watcher. `make devweb-runserver`
+repeats this preparation and stops if the build fails.
+
+Development Make targets explicitly load `docker-compose.dev.yml` alongside the
+base Compose file. They use a separate local development image and ignore
+`docker-compose.override.yml`; no override file needs to be copied.
+
+With `DEBUG=True` set in `.env`, the website at `http://localhost:62202` enables
+LiveReload using a separate WebSocket at `ws://localhost:35729/livereload`. Opening
+`http://localhost:35729/` shows the expected tiny-lr welcome JSON. After editing
+bundled JS/SCSS, wait for webpack to compile and check that the page refreshes.
+See [LiveReload verification and navigation messages](dockerize/README.md)
+for details.
+
+If an existing checkout has missing styles or JavaScript errors, stop runserver
+with Ctrl+C, run `make build-dev`, then `make devweb-runserver` and hard-refresh
+the browser. Check compilation logs from the `dockerize` directory:
+
+```bash
+docker compose -p qgis-plugins -f docker-compose.yml -f docker-compose.dev.yml logs webpack
+```
 
 - Run unit tests
 ```bash
@@ -198,7 +221,7 @@ pre-commit install --config .pre-commit-config.yaml
 - Auth type: password (and tick 'save password')
 - Click next button
 - password : `docker`
-- Interpreter : `/usr/local/bin/python`
+- Interpreter : `/opt/venv/bin/python`
 - Sync folders -> click on the folder icon
   - local : `<path to your repo>/dockerize/qgis-app`
   - remote : `/home/web/django_project`
@@ -226,9 +249,9 @@ Now set these options:
 
 - **Name:** Django Server
 - **Host:** 0.0.0.0
-- **Port:** 8080
-- **Additional options:** `--settings=settings.docker`
-- **Run browser** If checked, it will open the url after you click run. You should be able to access the running on 0.0.0.0:62202 (the port that mapped to 8080)
+- **Port:** 8081
+- **Additional options:** `--settings=settings_docker`
+- **Run browser** If checked, it will open the url after you click run. You should be able to access the running on 0.0.0.0:62202 (the port mapped to 8081)
 
 * **Environment vars** , you can add the variables value one-by-one by clicking on browse icon at right corner in the input field, or just copy-paste this value:
 `PYTHONUNBUFFERED=1;DJANGO_SETTINGS_MODULE=settings_docker;RABBITMQ_HOST=rabbitmq;DATABASE_NAME=gis;DATABASE_USERNAME=docker;DATABASE_PASSWORD=docker;DATABASE_HOST=db`

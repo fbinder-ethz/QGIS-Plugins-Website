@@ -149,7 +149,13 @@ make exec c="command"
 
 ### Development Commands
 
-- **build-dev:** Builds Docker images for the development environment.
+These targets explicitly load `docker-compose.yml` and `docker-compose.dev.yml`,
+without loading `docker-compose.override.yml`. The development image is tagged
+`qgis-plugins-dev:local`, separately from the production image. Set `DEBUG=True`
+yourself in `.env` for Django to serve source static files and the development
+bundles. The setup preserves your `DEBUG` setting.
+
+- **build-dev:** Builds the local development image shared by `devweb`, webpack, and `maindev`.
 ```sh
 make build-dev
 ```
@@ -159,7 +165,12 @@ make build-dev
 make devweb-test
 ```
 
-- **devweb:** Starts the `devweb` container for development, along with RabbitMQ, worker, beat, and webpack containers.
+- **devweb-assets:** Stops the webpack watcher, installs locked npm dependencies in a Docker volume, and builds development CSS/JavaScript. A failed build stops startup.
+```sh
+make devweb-assets
+```
+
+- **devweb:** Builds frontend assets, then starts the `devweb` container for development, along with RabbitMQ, worker, beat, and webpack containers.
 ```sh
 make devweb
 ```
@@ -184,10 +195,28 @@ make devweb-exec c="command"
 make devweb-shell
 ```
 
-- **devweb-runserver:** Runs the Django development server inside the `devweb` container.
+- **devweb-runserver:** Prepares frontend assets, starts the webpack watcher, and runs Django at http://localhost:62202 (host port `62202` maps to container port `8081`).
 ```sh
 make devweb-runserver
 ```
+
+With `DEBUG=True` set in `.env`, LiveReload is enabled on pages opened at
+`http://localhost:62202`. Development JavaScript connects to
+`ws://localhost:35729/livereload`; port `35729` runs a
+separate LiveReload service. Opening `http://localhost:35729/` displays
+`{"tinylr":"Welcome","version":"1.1.1"}`, which is the expected service response.
+To check LiveReload, edit a bundled JS/SCSS file and wait for webpack to compile:
+the website should refresh automatically. In browser DevTools, the LiveReload
+WebSocket should have status `101`. On WSL mounts under `/mnt/c`, set
+`WATCHPACK_POLLING=true` in `.env` if edits are not detected.
+
+The LiveReload port is published only on the local host. Asset preparation
+stops the watcher before reinstalling dependencies; if it fails, fix the error
+and rerun `make devweb-runserver` to restart it.
+
+Chrome can log “Page entered Back-Forward Cache” when it suspends the LiveReload
+WebSocket during navigation. Reload the page after returning; this message alone
+does not indicate an asset build failure.
 
 - **dbseed:** Seeds the database with initial data from JSON files in the `fixtures` directory.
 ```sh
