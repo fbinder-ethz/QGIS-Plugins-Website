@@ -203,7 +203,7 @@ exec:
 #    D E V E L O P M E N T    C O M M A N D S
 # ----------------------------------------------------------------------------
 
-.PHONY: devweb-config
+.PHONY: build-dev devweb-config devweb-test devweb devweb-runserver
 
 devweb-config:
 	@test -f docker-compose.override.yml || cp docker-compose.override.template.yml docker-compose.override.yml
@@ -213,14 +213,14 @@ build-dev: devweb-config
 	@echo "------------------------------------------------------------------"
 	@echo "Building in development mode only"
 	@echo "------------------------------------------------------------------"
-	@docker compose -p $(PROJECT_ID) build devweb
+	@docker compose -p $(PROJECT_ID) build devweb qgis-qt6
 
-devweb-test: db
+devweb-test: devweb-config db
 	@echo
 	@echo "------------------------------------------------------------------"
 	@echo "Running in TESTING mode"
 	@echo "------------------------------------------------------------------"
-	@docker compose up --no-deps -d devweb
+	@docker compose -p $(PROJECT_ID) up --no-deps -d devweb
 
 devweb: devweb-config db
 	@echo

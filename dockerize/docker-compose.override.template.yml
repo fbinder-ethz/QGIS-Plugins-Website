@@ -1,46 +1,39 @@
-version: '3'
+x-dev-image: &dev-image
+  image: kartoza/qgis-plugins-uwsgi:dev-latest
+  build:
+    context: ${PWD}/../
+    dockerfile: dockerize/docker/Dockerfile
+    target: dev
+
+x-dev-volumes: &dev-volumes
+  - ../qgis-app:/home/web/django_project
+  - ./static:/home/web/static:rw
+  - ./media:/home/web/media:rw
+
 services:
   devweb:
-    # Note you cannot scale if you use container_name
-    image: kartoza/qgis-plugins-uwsgi:dev-latest
-    container_name: qgis-plugins-devweb
-    volumes:
-      -  ../qgis-app:/home/web/django_project
-      - ./static:/home/web/static:rw
-      - ./media:/home/web/media:rw
-    build:
-      context: ${PWD}/../
-      dockerfile: dockerize/docker/Dockerfile
-      target: dev
-    ports:
-      # for django test server
-      - "62202:8081"
-      # for ssh
-      - "62203:22"
+    <<: *dev-image
+    volumes: *dev-volumes
     command: uwsgi --ini /uwsgi.conf
 
   beat:
-    volumes:
-      -  ../qgis-app:/home/web/django_project
-      - ./static:/home/web/static:rw
-      - ./media:/home/web/media:rw
+    <<: *dev-image
+    volumes: *dev-volumes
 
   worker:
-    volumes:
-      -  ../qgis-app:/home/web/django_project
-      - ./static:/home/web/static:rw
-      - ./media:/home/web/media:rw
+    <<: *dev-image
+    volumes: *dev-volumes
 
   uwsgi:
+    <<: *dev-image
     container_name: qgis-plugins-uwsgi
-    volumes:
-      -  ../qgis-app:/home/web/django_project
-      - ./static:/home/web/static:rw
-      - ./media:/home/web/media:rw
-    build:
-      context: ${PWD}/../
-      dockerfile: dockerize/docker/Dockerfile
-      target: prod
+    volumes: *dev-volumes
+
+  webpack:
+    <<: *dev-image
+
+  maindev:
+    <<: *dev-image
 
   db:
     volumes:

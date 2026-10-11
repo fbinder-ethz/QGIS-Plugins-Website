@@ -18,7 +18,7 @@ Please ensure both are installed on your system before proceeding.
 You can check your installation with:
 ```bash
 docker --version
-docker-compose --version
+docker compose version
 ```
 
 ![-----------------------------------------------------](./img/green-gradient.png)
@@ -53,7 +53,7 @@ cp dockerize/.env.template dockerize/.env
 - Edit .env file and set your environment variables
 - Enable debug mode by setting `DEBUG=True`.
 - Uncomment RABBITMQ_IMAGE if you want to use a different image version.
-  Default is `rabbitmq:3.7-alpine`. This is useful if you encounter any issues
+  Default is `rabbitmq:3.13-alpine`. This is useful if you encounter any issues
   with the default image (can be also use to change the image without editing the code).
   Please also see [this discussion](https://github.com/qgis/QGIS-Plugins-Website/issues/80).
 
@@ -80,7 +80,7 @@ cd dockerize
 
 - Build and spin container
 ```bash
-make devweb-config build
+make build-dev
 make devweb
 ```
 
@@ -198,9 +198,9 @@ pre-commit install --config .pre-commit-config.yaml
 - Auth type: password (and tick 'save password')
 - Click next button
 - password : `docker`
-- Interpreter : `/usr/local/bin/python`
+- Interpreter : `/opt/venv/bin/python`
 - Sync folders -> click on the folder icon
-  - local : `<path to your repo>/dockerize/qgis-app`
+  - local : `<path to your repo>/qgis-app`
   - remote : `/home/web/django_project`
     After that you should see something like this in sync folder:
     `<Project root>/django_project→/home/web/django_project`
@@ -212,8 +212,8 @@ pre-commit install --config .pre-commit-config.yaml
 
 - Language & Framework -> Django
 - tick to Enable Django Support.
-- Django project root: `<path to your repo>/qgis_app`
-- Settings: setting_docker.py
+- Django project root: `<path to your repo>/qgis-app`
+- Settings: settings_docker.py
 - Click the Apply button
 
 #### Create the django run configuration
@@ -226,9 +226,9 @@ Now set these options:
 
 - **Name:** Django Server
 - **Host:** 0.0.0.0
-- **Port:** 8080
-- **Additional options:** `--settings=settings.docker`
-- **Run browser** If checked, it will open the url after you click run. You should be able to access the running on 0.0.0.0:62202 (the port that mapped to 8080)
+- **Port:** 8081
+- **Additional options:** `--settings=settings_docker`
+- **Run browser** If checked, it will open the url after you click run. You should be able to access the running on 0.0.0.0:62202 (the port mapped to 8081)
 
 * **Environment vars** , you can add the variables value one-by-one by clicking on browse icon at right corner in the input field, or just copy-paste this value:
 `PYTHONUNBUFFERED=1;DJANGO_SETTINGS_MODULE=settings_docker;RABBITMQ_HOST=rabbitmq;DATABASE_NAME=gis;DATABASE_USERNAME=docker;DATABASE_PASSWORD=docker;DATABASE_HOST=db`
