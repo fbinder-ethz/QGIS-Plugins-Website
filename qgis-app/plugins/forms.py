@@ -11,6 +11,7 @@ from plugins.models import (
     PluginEmailCommunication,
     PluginOutstandingToken,
     PluginVersion,
+    PluginVersionReviewMessage,
     SecurityRule,
 )
 from plugins.validator import validate_package_name_pep8, validator
@@ -396,6 +397,23 @@ class PackageUploadForm(forms.Form):
         # Clean tags
         self.cleaned_data["tags"] = _clean_tags(self.cleaned_data.get("tags", None))
         return package
+
+
+class VersionReviewMessageForm(ModelForm):
+    class Meta:
+        model = PluginVersionReviewMessage
+        fields = ("message",)
+        widgets = {
+            "message": forms.Textarea(
+                attrs={
+                    "class": "textarea",
+                    "rows": 3,
+                    "placeholder": _(
+                        "Discuss this review with the creator or reviewer…"
+                    ),
+                }
+            )
+        }
 
 
 class VersionFeedbackForm(forms.Form):

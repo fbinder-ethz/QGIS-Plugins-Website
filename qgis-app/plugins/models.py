@@ -1298,6 +1298,20 @@ class PluginVersionFeedback(models.Model):
         super(PluginVersionFeedback, self).save(*args, **kwargs)
 
 
+class PluginVersionReviewMessage(models.Model):
+    """Discussion messages, independent of actionable review feedback."""
+
+    version = models.ForeignKey(
+        PluginVersion, on_delete=models.CASCADE, related_name="review_messages"
+    )
+    author = models.ForeignKey(User, on_delete=models.CASCADE)
+    message = models.TextField(_("Message"), max_length=4000)
+    created_on = models.DateTimeField(_("Created on"), auto_now_add=True)
+
+    class Meta:
+        ordering = ("created_on", "pk")
+
+
 class PluginVersionFeedbackAttachment(models.Model):
     """Image attachments for feedback."""
 

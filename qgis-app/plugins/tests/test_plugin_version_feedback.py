@@ -3,7 +3,7 @@ import datetime
 from django.conf import settings
 from django.contrib.auth.models import User
 from django.core import mail
-from django.test import TestCase
+from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 from django.utils.dateformat import format
 from freezegun import freeze_time
@@ -12,6 +12,7 @@ from plugins.models import (
     PluginEmailConfirmation,
     PluginVersion,
     PluginVersionFeedback,
+    PluginVersionReviewMessage,
 )
 from plugins.views import version_feedback_notify, version_feedback_resolved_notify
 
@@ -462,6 +463,144 @@ class TestCreateVersionFeedback(SetupMixin, TestCase):
         feedbacks = PluginVersionFeedback.objects.filter(version=self.version_2).all()
         self.assertEqual(len(feedbacks), 1)
         self.assertEqual(feedbacks[0].task, "only save valid bullet point")
+
+
+class TestVersionReviewDiscussion(SetupMixin, TestCase):
+    def setUp(self):
+        super().setUp()
+        self.url = reverse(
+            "version_feedback",
+            args=[self.plugin_1.package_name, self.version_1.version],
+        )
+        self.other_user = User.objects.create_user(username="other-user")
+
+    def send_message(self, message, **extra):
+        return self.client.post(
+            self.url,
+            {"action": "discussion", "discussion-message": message, **extra},
+        )
+
+    def test_creator_and_reviewer_can_discuss_without_creating_tasks(self):
+        for user, message in (
+            (self.creator, "Which part should I change?"),
+            (self.staff, "Please update the metadata."),
+        ):
+            self.client.force_login(user)
+            response = self.send_message(message, author=self.other_user.pk)
+            self.assertRedirects(response, self.url + "#review-discussion")
+        discussion = list(self.version_1.review_messages.all())
+        self.assertEqual(
+            [entry.author for entry in discussion], [self.creator, self.staff]
+        )
+        self.assertEqual(self.version_1.feedback.count(), 1)
+        self.feedback_1.refresh_from_db()
+        self.version_1.refresh_from_db()
+        self.assertFalse(self.feedback_1.is_completed)
+        self.assertFalse(self.version_1.approved)
+        response = self.client.get(self.url)
+        self.assertContains(response, "Which part should I change?")
+        self.assertContains(response, "Please update the metadata.")
+        self.assertContains(response, "Send message")
+
+    def test_collaborator_can_participate(self):
+        self.plugin_1.owners.add(self.other_user)
+        self.client.force_login(self.other_user)
+        response = self.send_message("I can help with this change.")
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(self.version_1.review_messages.get().author, self.other_user)
+
+    def test_login_required_for_reading_and_posting(self):
+        self.assertEqual(self.client.get(self.url).status_code, 302)
+        self.assertEqual(self.send_message("Not logged in").status_code, 302)
+        self.assertFalse(PluginVersionReviewMessage.objects.exists())
+
+    def test_unrelated_user_cannot_read_or_post(self):
+        self.client.force_login(self.other_user)
+        self.assertEqual(self.client.get(self.url).status_code, 403)
+        self.assertEqual(self.send_message("Unauthorized").status_code, 403)
+        self.assertFalse(PluginVersionReviewMessage.objects.exists())
+
+    def test_messages_are_scoped_to_the_requested_version(self):
+        PluginVersionReviewMessage.objects.create(
+            version=self.version_2,
+            author=self.staff,
+            message="Other version discussion",
+        )
+        self.client.force_login(self.creator)
+        self.send_message("This version only", version=self.version_2.pk)
+        response = self.client.get(self.url)
+        self.assertContains(response, "This version only")
+        self.assertNotContains(response, "Other version discussion")
+        self.assertEqual(self.version_2.review_messages.count(), 1)
+
+    def test_invalid_messages_keep_form_errors_and_do_not_create_tasks(self):
+        self.client.force_login(self.creator)
+        for message in ("", "   \n ", "x" * 4001):
+            with self.subTest(message_length=len(message)):
+                response = self.send_message(message)
+                self.assertEqual(response.status_code, 200)
+                self.assertTrue(response.context["discussion_form"].errors)
+        self.assertFalse(PluginVersionReviewMessage.objects.exists())
+        self.assertEqual(self.version_1.feedback.count(), 1)
+
+    def test_message_text_is_escaped_and_line_breaks_preserved(self):
+        self.client.force_login(self.creator)
+        self.send_message('<script>alert("test")</script>\nSecond line')
+        response = self.client.get(self.url)
+        self.assertContains(
+            response,
+            "&lt;script&gt;alert(&quot;test&quot;)&lt;/script&gt;<br>Second line",
+        )
+        self.assertNotContains(response, '<script>alert("test")</script>')
+
+    def test_message_post_requires_csrf_token(self):
+        client = Client(enforce_csrf_checks=True)
+        client.force_login(self.creator)
+        response = client.post(
+            self.url, {"action": "discussion", "discussion-message": "Missing token"}
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(PluginVersionReviewMessage.objects.exists())
+
+    @override_settings(DEBUG=False)
+    def test_replies_notify_reviewers_and_editors_except_sender(self):
+        self.creator.email = "creator@example.com"
+        self.creator.save()
+        self.client.force_login(self.creator)
+        self.send_message("Could you clarify this task?")
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].recipients(), [self.staff.email])
+        self.assertIn("Could you clarify this task?", mail.outbox[0].body)
+        self.assertIn(self.url + "#review-discussion", mail.outbox[0].body)
+        self.client.force_login(self.staff)
+        self.send_message("Here is the clarification.")
+        self.assertEqual(len(mail.outbox), 2)
+        self.assertEqual(mail.outbox[1].recipients(), [self.creator.email])
+
+    @override_settings(DEBUG=False)
+    def test_discussion_participants_without_tasks_receive_replies(self):
+        self.url = reverse(
+            "version_feedback",
+            args=[self.plugin_2.package_name, self.version_2.version],
+        )
+        self.client.force_login(self.staff)
+        self.send_message("Let's discuss before creating tasks.")
+        self.client.force_login(self.creator)
+        self.send_message("Here is my question.")
+        self.assertEqual(mail.outbox[-1].recipients(), [self.staff.email])
+        self.assertFalse(self.version_2.feedback.exists())
+
+    @override_settings(DEBUG=True)
+    def test_debug_mode_suppresses_notification_email(self):
+        self.client.force_login(self.creator)
+        self.send_message("Local discussion")
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_invalid_feedback_retains_existing_form_errors(self):
+        self.client.force_login(self.staff)
+        response = self.client.post(self.url, {"feedback": ""})
+        self.assertTrue(response.context["form"].errors)
+        self.assertContains(response, "The form contains errors")
 
 
 class TestDeleteVersionFeedback(SetupMixin, TestCase):

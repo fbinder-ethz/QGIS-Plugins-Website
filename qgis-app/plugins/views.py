@@ -55,6 +55,7 @@ from plugins.forms import (
     PluginVersionForm,
     ValidationError,
     VersionFeedbackForm,
+    VersionReviewMessageForm,
 )
 from plugins.models import (
     PLUGIN_EMAIL_CONFIRMATION_RESEND_INTERVAL_MINUTES,
@@ -479,6 +480,39 @@ def check_plugin_version_approval_rights(user, plugin):
     return user.is_staff or (
         user in plugin.editors and user.has_perm("plugins.can_approve")
     )
+
+
+def can_access_plugin_review(user, plugin):
+    """Editors and approvers share the version review and its discussion."""
+    return user in plugin.editors or check_plugin_version_approval_rights(user, plugin)
+
+
+def version_review_message_notify(review_message, discussion_url):
+    version = review_message.version
+    editor_ids = [editor.pk for editor in version.plugin.editors]
+    participant_ids = set(editor_ids)
+    participant_ids.update(version.feedback.values_list("reviewer_id", flat=True))
+    participant_ids.update(version.review_messages.values_list("author_id", flat=True))
+    recipients = list(
+        User.objects.filter(pk__in=participant_ids)
+        .filter(Q(is_staff=True) | Q(pk__in=editor_ids))
+        .exclude(pk=review_message.author_id)
+        .exclude(email="")
+        .values_list("email", flat=True)
+        .distinct()
+    )
+    if recipients:
+        send_mail_wrapper(
+            _("Plugin %s review discussion.") % version.plugin,
+            _("%(author)s wrote:\n\n%(message)s\n\nDiscussion: %(url)s")
+            % {
+                "author": review_message.author,
+                "message": review_message.message,
+                "url": discussion_url,
+            },
+            settings.DEFAULT_FROM_EMAIL,
+            recipients,
+        )
 
 
 @login_required
@@ -2493,14 +2527,31 @@ def version_feedback(request, package_name, version):
     is_user_has_approval_rights: bool = check_plugin_version_approval_rights(
         request.user, plugin
     )
-    if not is_user_plugin_owner and not is_user_has_approval_rights:
+    if not can_access_plugin_review(request.user, plugin):
         return render(
             request,
             template_name="plugins/version_permission_deny.html",
             context={},
             status=403,
         )
-    if request.method == "POST":
+    form = VersionFeedbackForm()
+    discussion_form = VersionReviewMessageForm(prefix="discussion")
+    if request.method == "POST" and request.POST.get("action") == "discussion":
+        discussion_form = VersionReviewMessageForm(request.POST, prefix="discussion")
+        if discussion_form.is_valid():
+            review_message = discussion_form.save(commit=False)
+            review_message.version = version
+            review_message.author = request.user
+            review_message.save()
+            discussion_path = (
+                reverse("version_feedback", args=[package_name, version.version])
+                + "#review-discussion"
+            )
+            version_review_message_notify(
+                review_message, request.build_absolute_uri(discussion_path)
+            )
+            return HttpResponseRedirect(discussion_path)
+    elif request.method == "POST":
         form = VersionFeedbackForm(request.POST, request.FILES)
         if form.is_valid():
             tasks = form.cleaned_data["tasks"]
@@ -2527,7 +2578,6 @@ def version_feedback(request, package_name, version):
             return HttpResponseRedirect(
                 reverse("version_feedback", args=[package_name, version.version])
             )
-    form = VersionFeedbackForm()
     feedbacks = PluginVersionFeedback.objects.filter(version=version).prefetch_related(
         "attachments"
     )
@@ -2538,6 +2588,8 @@ def version_feedback(request, package_name, version):
         {
             "feedbacks": feedbacks,
             "form": form,
+            "discussion_form": discussion_form,
+            "review_messages": version.review_messages.select_related("author"),
             "version": version,
             "is_user_has_approval_rights": is_user_has_approval_rights,
             "is_user_plugin_owner": is_user_plugin_owner,
@@ -2550,10 +2602,7 @@ def version_feedback(request, package_name, version):
 def version_feedback_update(request, package_name, version):
     plugin = get_object_or_404(Plugin, package_name=package_name)
     version = get_object_or_404(PluginVersion, plugin=plugin, version=version)
-    has_update_permission: bool = (
-        request.user in plugin.editors
-        or check_plugin_version_approval_rights(request.user, plugin)
-    )
+    has_update_permission = can_access_plugin_review(request.user, plugin)
     if not has_update_permission:
         return JsonResponse({"success": False}, status=401)
     completed_tasks = request.POST.getlist("completed_tasks")
@@ -2585,10 +2634,7 @@ def version_feedback_edit(request, package_name, version, feedback):
     )
     plugin = feedback.version.plugin
 
-    has_update_permission: bool = (
-        request.user in plugin.editors
-        or check_plugin_version_approval_rights(request.user, plugin)
-    )
+    has_update_permission = can_access_plugin_review(request.user, plugin)
     if not has_update_permission:
         return JsonResponse({"success": False}, status=401)
 
@@ -2660,10 +2706,7 @@ def version_feedback_delete(request, package_name, version, feedback):
     plugin = feedback.version.plugin
     status = request.POST.get("status_feedback")
     is_update_succeed: bool = False
-    is_user_can_update_feedback: bool = (
-        request.user in plugin.editors
-        or check_plugin_version_approval_rights(request.user, plugin)
-    )
+    is_user_can_update_feedback = can_access_plugin_review(request.user, plugin)
     if status == "deleted" and feedback.reviewer == request.user:
         feedback.delete()
         is_update_succeed: bool = True

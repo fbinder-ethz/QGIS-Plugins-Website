@@ -1,0 +1,2 @@
+<span class="has-text-weight-bold">{% if author.first_name %}{{ author.first_name }} {{ author.last_name }}{% else %}{{ author.username }}{% endif %}</span>
+<span class="feedback-info">wrote {{ created_on|timesince }} ago</span>
